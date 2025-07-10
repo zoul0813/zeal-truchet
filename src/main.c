@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <zvb_hardware.h>
+#include <zvb_dma.h>
 #include <zos_sys.h>
 #include <zos_time.h>
 
@@ -158,11 +159,33 @@ inline void text_demap_vram(void)
     mmu_page2 = mmu_page_current;
 }
 
+zvb_dma_descriptor_t dma_desc[] = {
+    {
+        .rd_addr_lo = 0,
+        .rd_addr_hi = 0,
+        .wr_addr_lo = (VID_MEM_PHYS_ADDR_START) & 0xFFFF,
+        .wr_addr_hi = (VID_MEM_PHYS_ADDR_START >> 16) & 0xFF,
+        .length = 3200,
+        .flags = { 0 },
+    },
+    {
+        .rd_addr_lo = 0,
+        .rd_addr_hi = 0,
+        .wr_addr_lo = ((VID_MEM_PHYS_ADDR_START + 0x1000)) & 0xFFFF,
+        .wr_addr_hi = ((VID_MEM_PHYS_ADDR_START + 0x1000) >> 16) & 0xFF,
+        .length = 3200,
+        .flags = {
+            .raw = DMA_DESC_LAST
+        },
+    },
+};
+
+
 void draw_tile(truchet_pattern_t* pattern, uint8_t px, uint8_t py) {
     uint8_t pw = pattern->width;
     uint8_t ph = pattern->height;
 
-    text_map_vram();
+    // text_map_vram();
     for(uint8_t y = 0; y < ph; y++) {
         for(uint8_t x = 0; x < pw; x++) {
             uint16_t offset = (y * pw) + x;
@@ -171,7 +194,7 @@ void draw_tile(truchet_pattern_t* pattern, uint8_t px, uint8_t py) {
             COLOR[py + y][px + x] = 0x0F;
         }
     }
-    text_demap_vram();
+    // text_demap_vram();
 }
 
 void draw_pattern(truchet_pattern_t* pattern) {
@@ -186,6 +209,18 @@ void draw_pattern(truchet_pattern_t* pattern) {
 
 int main(void)
 {
+    // setup DMA
+    dma_desc[0].rd_addr_lo = (mmu_page2_ro << 14) & 0xFF;
+    dma_desc[0].rd_addr_hi = ((mmu_page2_ro << 14) >> 16) & 0xFF;
+
+    dma_desc[1].rd_addr_lo = (dma_desc[0].rd_addr_lo + 0x1000) & 0xFFFF;
+    dma_desc[1].rd_addr_hi = dma_desc[0].rd_addr_hi;
+
+    uint32_t desc_phys_addr = virt_to_phys(&dma_desc);
+    zvb_peri_dma_addr0 = (desc_phys_addr >> 0) & 0xFF;
+    zvb_peri_dma_addr1 = (desc_phys_addr >> 8) & 0xFF;
+    zvb_peri_dma_addr2 = (desc_phys_addr >> 16) & 0xFF;
+
     text_map_vram();
     // backup existing font
     memcpy(font_backup, &FONT[12], 4 * 12);
@@ -210,13 +245,16 @@ int main(void)
     for(uint8_t p = 0; p < PATTERNS_LENGTH; p++) {
         truchet_pattern_t *pattern = &PATTERNS[p];
         draw_pattern(pattern);
+        // start the DMA transfer
+        zvb_peri_dma_ctrl = ZVB_PERI_DMA_CTRL_START;
         msleep(1500);
     }
     // draw_pattern(&PATTERNS[5]);
 
     // restore font backup
     text_map_vram();
-    // memcpy(FONT, font_backup, 4 * 12);
+    memset(TEXT, 0, 80 * 40);
+    memcpy(&FONT[12], font_backup, 4 * 12);
     zvb_peri_text_ctrl = text_ctrl;
     zvb_peri_text_curs_time = cursor_time;
     zvb_peri_text_curs_y = SCREEN_HEIGHT - 1;
