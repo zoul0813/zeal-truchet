@@ -10,6 +10,8 @@
 
 #define SCREEN_FONT_SIZE    3072
 
+int fflush_stdout(void); // zeal8bitos.asm
+
 const uint8_t CHARS[4][12] = {
     {
         0b00000001,
@@ -118,7 +120,9 @@ int main(void)
                 }
             }
         }
-        printf("\n\n");
+        putchar('\n');
+        putchar('\n');
+        fflush_stdout();
     }
 
     // restore font backup
@@ -126,6 +130,6 @@ int main(void)
     // memcpy(FONT, font_backup, 4 * 12);
     // text_demap_vram();
 
-    printf("patterns: %d\n", PATTERNS_LENGTH);
+    // printf("patterns: %d\n", PATTERNS_LENGTH);
     return 0;
 }
