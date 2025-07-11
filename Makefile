@@ -4,6 +4,8 @@ ifndef ZVB_SDK_PATH
 	$(error "Failure: ZVB_SDK_PATH variable not found.  It must point to Zeal Video Board SDK path.")
 endif
 
+ENABLE_DMA=1
+
 include $(ZVB_SDK_PATH)/sdcc/base_sdcc.mk
 
 run:

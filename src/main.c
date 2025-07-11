@@ -138,7 +138,7 @@ const uint8_t CHARS[4][12] = {
 
 #define PATTERNS_LENGTH (sizeof(PATTERNS) / sizeof(PATTERNS[0]))
 
-const __sfr __banked __at(0xF2) mmu_page2_ro;
+const __sfr __banked __at(0x80F2) mmu_page2_ro;
 __sfr __at(0xF2) mmu_page2;
 uint8_t mmu_page_current;
 
@@ -159,27 +159,16 @@ inline void text_demap_vram(void)
     mmu_page2 = mmu_page_current;
 }
 
-zvb_dma_descriptor_t dma_desc[] = {
+zvb_dma_descriptor_t dma_desc[2] = {
     {
-        .rd_addr_lo = 0,
-        .rd_addr_hi = 0,
-        .wr_addr_lo = (VID_MEM_PHYS_ADDR_START) & 0xFFFF,
-        .wr_addr_hi = (VID_MEM_PHYS_ADDR_START >> 16) & 0xFF,
         .length = 3200,
-        .flags = { 0 },
+        .flags = { 0 }
     },
     {
-        .rd_addr_lo = 0,
-        .rd_addr_hi = 0,
-        .wr_addr_lo = ((VID_MEM_PHYS_ADDR_START + 0x1000)) & 0xFFFF,
-        .wr_addr_hi = ((VID_MEM_PHYS_ADDR_START + 0x1000) >> 16) & 0xFF,
         .length = 3200,
-        .flags = {
-            .raw = DMA_DESC_LAST
-        },
+        .flags = { 0 }
     },
 };
-
 
 void draw_tile(truchet_pattern_t* pattern, uint8_t px, uint8_t py) {
     uint8_t pw = pattern->width;
@@ -209,17 +198,24 @@ void draw_pattern(truchet_pattern_t* pattern) {
 
 int main(void)
 {
-    // setup DMA
-    dma_desc[0].rd_addr_lo = (mmu_page2_ro << 14) & 0xFF;
-    dma_desc[0].rd_addr_hi = ((mmu_page2_ro << 14) >> 16) & 0xFF;
+    // DMA Method 1
+    zvb_dma_set_read_virt(&dma_desc[0], &TEXT);
+    zvb_dma_set_write(&dma_desc[0], VID_MEM_PHYS_ADDR_START);
+    zvb_dma_set_read_virt(&dma_desc[1], &COLOR);
+    zvb_dma_set_write(&dma_desc[1], VID_MEM_PHYS_ADDR_START + 0x1000);
 
-    dma_desc[1].rd_addr_lo = (dma_desc[0].rd_addr_lo + 0x1000) & 0xFFFF;
-    dma_desc[1].rd_addr_hi = dma_desc[0].rd_addr_hi;
-
-    uint32_t desc_phys_addr = virt_to_phys(&dma_desc);
-    zvb_peri_dma_addr0 = (desc_phys_addr >> 0) & 0xFF;
-    zvb_peri_dma_addr1 = (desc_phys_addr >> 8) & 0xFF;
-    zvb_peri_dma_addr2 = (desc_phys_addr >> 16) & 0xFF;
+    // DMA Method 2
+    // zvb_dma_descriptor_config_t dma_config = {
+    //     .rd_addr = zvb_dma_virt_to_phys(&TEXT),
+    //     .wr_addr = VID_MEM_PHYS_ADDR_START,
+    //     .length = 3200,
+    //     .flags = { 0 }
+    // };
+    // zvb_dma_prepare_descriptor(&dma_desc[0], &dma_config);
+    // dma_config.rd_addr += 0x1000;
+    // dma_config.wr_addr += 0x1000;
+    // dma_config.flags.last = 1;
+    // zvb_dma_prepare_descriptor(&dma_desc[1], &dma_config);
 
     text_map_vram();
     // backup existing font
@@ -229,6 +225,7 @@ int main(void)
     memset(TEXT, 0, 80 * 40);
     memset(COLOR, 0x0F, 80 * 40);
 
+    zvb_map_peripheral(ZVB_PERI_TEXT_IDX);
     zvb_peri_text_scroll_y = 0;
     zvb_peri_text_scroll_x = 0;
 
@@ -245,22 +242,21 @@ int main(void)
     for(uint8_t p = 0; p < PATTERNS_LENGTH; p++) {
         truchet_pattern_t *pattern = &PATTERNS[p];
         draw_pattern(pattern);
-        // start the DMA transfer
-        zvb_peri_dma_ctrl = ZVB_PERI_DMA_CTRL_START;
+        zvb_dma_start_transfer(dma_desc);
         msleep(1500);
     }
-    // draw_pattern(&PATTERNS[5]);
 
     // restore font backup
     text_map_vram();
     memset(TEXT, 0, 80 * 40);
     memcpy(&FONT[12], font_backup, 4 * 12);
+    text_demap_vram();
+
+    zvb_map_peripheral(ZVB_PERI_TEXT_IDX);
     zvb_peri_text_ctrl = text_ctrl;
     zvb_peri_text_curs_time = cursor_time;
     zvb_peri_text_curs_y = SCREEN_HEIGHT - 1;
     zvb_peri_text_curs_x = 0;
-    text_demap_vram();
 
-    // printf("patterns: %d\n", PATTERNS_LENGTH);
     return 0;
 }
