@@ -198,6 +198,9 @@ void draw_pattern(truchet_pattern_t* pattern) {
 
 int main(void)
 {
+    zvb_map_peripheral(ZVB_PERI_DMA_IDX);
+    zvb_peri_dma_clk_div = 0x23;
+
     // DMA Method 1
     zvb_dma_set_read_virt(&dma_desc[0], &TEXT);
     zvb_dma_set_write(&dma_desc[0], VID_MEM_PHYS_ADDR_START);
